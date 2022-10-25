@@ -19,14 +19,8 @@ import cv_bridge
 # Create a bridge between ROS and OpenCV
 bridge = cv_bridge.CvBridge()
 
-## User-defined parameters: (Update these values to your liking)
-# Minimum size for a contour to be considered anything
-MIN_AREA = 500 
+MIN_AREA = 5000
 
-# Minimum size for a contour to be considered part of the track
-MIN_AREA_TRACK = 5000
-
-# Robot's speed when following the line
 LINEAR_SPEED = 0.2
 
 # Proportional constant to be applied on speed when turning 
@@ -46,8 +40,9 @@ FINALIZATION_PERIOD = 4
 MAX_ERROR = 30
 
 # BGR values to filter only the selected color range
-lower_bgr_values = np.array([31,  42,  53])
+lower_bgr_values = np.array([80,  100,  100])
 upper_bgr_values = np.array([255, 255, 255])
+
 
 def crop_size(height, width):
     """
@@ -65,7 +60,7 @@ def crop_size(height, width):
 image_input = 0
 error = 0
 just_seen_line = False
-just_seen_right_mark = False
+
 should_move = False
 right_mark_count = 0
 finalization_countdown = None
@@ -84,6 +79,7 @@ def start_follower_callback(request, response):
     finalization_countdown = None
     return response
 
+
 def stop_follower_callback(request, response):
     """
     Stop the robot
@@ -94,14 +90,16 @@ def stop_follower_callback(request, response):
     finalization_countdown = None
     return response
 
+
 def image_callback(msg):
     """
     Function to be called whenever a new Image message arrives.
     Update the global variable 'image_input'
     """
     global image_input
-    image_input = bridge.imgmsg_to_cv2(msg,desired_encoding='bgr8')
-    # node.get_logger().info('Received image')
+    image_input = bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+    node.get_logger().info('Received image')
+
 
 def get_contour_data(mask, out):
     """
@@ -114,52 +112,25 @@ def get_contour_data(mask, out):
     # get a list of contours
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
 
-    mark = {}
     line = {}
 
     for contour in contours:
-        
+
         M = cv2.moments(contour)
         # Search more about Image Moments on Wikipedia :)
-
         if M['m00'] > MIN_AREA:
-        # if countor.area > MIN_AREA:
+            # Contour is part of the track
+            line['x'] = crop_w_start + int(M["m10"]/M["m00"])
+            line['y'] = int(M["m01"]/M["m00"])
+            # plot the area in light blue
+            cv2.drawContours(out, contour, -1, (255, 255, 0), 1)
+            cv2.putText(
+                out, str(M['m00']), (int(M["m10"]/M["m00"]), int(
+                    M["m01"]/M["m00"])
+                    ), cv2.FONT_HERSHEY_PLAIN, 2, (255, 255, 0), 2)
 
-            if (M['m00'] > MIN_AREA_TRACK):
-                # Contour is part of the track
-                line['x'] = crop_w_start + int(M["m10"]/M["m00"])
-                line['y'] = int(M["m01"]/M["m00"])
+    return line
 
-                # plot the area in light blue
-                cv2.drawContours(out, contour, -1, (255,255,0), 1) 
-                cv2.putText(out, str(M['m00']), (int(M["m10"]/M["m00"]), int(M["m01"]/M["m00"])),
-                    cv2.FONT_HERSHEY_PLAIN, 2, (255,255,0), 2)
-            
-            else:
-                # Contour is a track mark
-                if (not mark) or (mark['y'] > int(M["m01"]/M["m00"])):
-                    # if there are more than one mark, consider only 
-                    # the one closest to the robot 
-                    mark['y'] = int(M["m01"]/M["m00"])
-                    mark['x'] = crop_w_start + int(M["m10"]/M["m00"])
-
-                    # plot the area in pink
-                    cv2.drawContours(out, contour, -1, (255,0,255), 1) 
-                    cv2.putText(out, str(M['m00']), (int(M["m10"]/M["m00"]), int(M["m01"]/M["m00"])),
-                        cv2.FONT_HERSHEY_PLAIN, 2, (255,0,255), 2)
-
-
-    if mark and line:
-    # if both contours exist
-        if mark['x'] > line['x']:
-            mark_side = "right"
-        else:
-            mark_side = "left"
-    else:
-        mark_side = None
-
-
-    return (line, mark_side)
 
 def timer_callback():
     """
@@ -167,11 +138,9 @@ def timer_callback():
     According to an image 'image_input', determine the speed of the robot
     so it can follow the contour
     """
-
     global error
     global image_input
     global just_seen_line
-    global just_seen_right_mark
     global should_move
     global right_mark_count
     global finalization_countdown
@@ -189,7 +158,7 @@ def timer_callback():
 
     # get the bottom part of the image (matrix slicing)
     crop = image[crop_h_start:crop_h_stop, crop_w_start:crop_w_stop]
-    
+
     # get a binary picture, where non-zero values represent the line.
     # (filter the color values so only the contour is seen)
     mask = cv2.inRange(crop, lower_bgr_values, upper_bgr_values)
@@ -197,14 +166,15 @@ def timer_callback():
     # get the centroid of the biggest contour in the picture,
     # and plot its detail on the cropped part of the output image
     output = image
-    line, mark_side = get_contour_data(mask, output[crop_h_start:crop_h_stop, crop_w_start:crop_w_stop])  
+    line = get_contour_data(mask, output[
+        crop_h_start:crop_h_stop, crop_w_start:crop_w_stop]) 
     # also get the side in which the track mark "is"
-    
+
     message = Twist()
-    
+
     if line:
-    # if there even is a line in the image:
-    # (as the camera could not be reading any lines)      
+        # if there even is a line in the image:
+        # (as the camera could not be reading any lines)
         x = line['x']
 
         # error:= The difference between the center of the image
@@ -215,7 +185,7 @@ def timer_callback():
         just_seen_line = True
 
         # plot the line centroid on the image
-        cv2.circle(output, (line['x'], crop_h_start + line['y']), 5, (0,255,0), 7)
+        cv2.circle(output, (line['x'], crop_h_start + line['y']), 5, (0, 255, 0), 7)
 
     else:
         # There is no line in the image. 
@@ -225,31 +195,9 @@ def timer_callback():
             error = error * LOSS_FACTOR
         message.linear.x = 0.0
 
-    if mark_side != None:
-        print("mark_side: {}".format(mark_side))
-
-        if (mark_side == "right") and (finalization_countdown == None) and \
-            (abs(error) <= MAX_ERROR) and (not just_seen_right_mark):
-
-            right_mark_count += 1
-
-            if right_mark_count > 1:
-                # Start final countdown to stop the robot
-                finalization_countdown = int(FINALIZATION_PERIOD / TIMER_PERIOD) + 1
-                print("Finalization Process has begun!")
-
-            
-            just_seen_right_mark = True
-    else:
-        just_seen_right_mark = False
-
-    
     # Determine the speed to turn and get the line in the center of the camera.
     message.angular.z = float(error) * -KP
     print("Error: {} | Angular Z: {}, ".format(error, message.angular.z))
-    
-
-
 
     # Plot the boundaries where the image was cropped
     cv2.rectangle(output, (crop_w_start, crop_h_start), (crop_w_stop, crop_h_stop), (0,0,255), 2)
@@ -286,16 +234,16 @@ def main():
 
     global publisher
     publisher = node.create_publisher(Twist, '/cmd_vel', rclpy.qos.qos_profile_system_default)
-    subscription = node.create_subscription(Image, 'camera/image_raw',
-                                            image_callback,
-                                            rclpy.qos.qos_profile_sensor_data)
+    node.create_subscription(
+        Image, 'image_raw',
+        image_callback,
+        rclpy.qos.QoSReliabilityPolicy.BEST_EFFORT)
 
-    timer = node.create_timer(TIMER_PERIOD, timer_callback)
-
-    start_service = node.create_service(Empty, 'start_follower', start_follower_callback)
-    stop_service = node.create_service(Empty, 'stop_follower', stop_follower_callback)
-
+    node.create_timer(TIMER_PERIOD, timer_callback)
+    node.create_service(Empty, 'start_follower', start_follower_callback)
+    node.create_service(Empty, 'stop_follower', stop_follower_callback)
     rclpy.spin(node)
+
 
 try:
     main()
