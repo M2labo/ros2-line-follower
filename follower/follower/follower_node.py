@@ -108,14 +108,14 @@ def get_contour_data(mask, out):
     and return the side in which the smaller contour is (the track mark) 
     (If there are any of these contours),
     and draw all contours on 'out' image
-    """ 
+    """
     # get a list of contours
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+    contours, _ = cv2.findContours(
+        mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
 
     line = {}
 
     for contour in contours:
-
         M = cv2.moments(contour)
         # Search more about Image Moments on Wikipedia :)
         if M['m00'] > MIN_AREA:
@@ -200,10 +200,13 @@ def timer_callback():
     print("Error: {} | Angular Z: {}, ".format(error, message.angular.z))
 
     # Plot the boundaries where the image was cropped
-    cv2.rectangle(output, (crop_w_start, crop_h_start), (crop_w_stop, crop_h_stop), (0,0,255), 2)
+    cv2.rectangle(
+        output,
+        (crop_w_start, crop_h_start),
+        (crop_w_stop, crop_h_stop), (0, 0, 255), 2)
 
     # Uncomment to show the binary picture
-    #cv2.imshow("mask", mask)
+    # cv2.imshow("mask", mask)
 
     # Show the output image to the user
     cv2.imshow("output", output)
@@ -217,7 +220,6 @@ def timer_callback():
 
         elif finalization_countdown == 0:
             should_move = False
-
 
     # Publish the message to 'cmd_vel'
     if should_move:
@@ -233,7 +235,10 @@ def main():
     node = Node('follower')
 
     global publisher
-    publisher = node.create_publisher(Twist, '/cmd_vel', rclpy.qos.qos_profile_system_default)
+    publisher = node.create_publisher(
+        Twist,
+        '/cmd_vel',
+        rclpy.qos.qos_profile_system_default)
     node.create_subscription(
         Image, 'image_raw',
         image_callback,
